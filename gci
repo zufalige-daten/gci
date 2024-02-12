@@ -1,0 +1,152 @@
+#!/usr/bin/python3
+
+import sys
+import subprocess
+import os
+
+whoami_result = subprocess.check_output("whoami", shell=True)
+if whoami_result != b'root\n':
+	print("GCI: ERROR: Must be root to excecute command.")
+	exit(-1)
+
+if (len(sys.argv) != 3 and len(sys.argv) != 4) and (sys.argv[1] != "upgrade" and len(sys.argv) != 2):
+	print("GCI: ERROR: Command invocation must be 'gci (install|upgrade|remove) [github repository] [optional:version]'.")
+	exit(-1)
+
+github_repo_basic_ = "https://github.com/"
+github_repo_ = ""
+if sys.argv[1] != "upgrade":
+	github_repo_ = sys.argv[2]
+repo_url_ = github_repo_basic_ + github_repo_
+ifile = open("/etc/gci.lst", "r+")
+usever_ = ""
+if len(sys.argv) == 4:
+	usever_ = sys.argv[3]
+
+def install(repo_url, github_repo_basic, github_repo, usever):
+	global ifile
+	latest_ver = subprocess.check_output("git -c 'versionsort.suffix=-' ls-remote --exit-code --refs --sort='version:refname' --tags " + repo_url + " '*.*.*' | tail --lines=1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
+	if usever == latest_ver:
+		print("GCI: Same version already installed.")
+		ifile.close()
+		return
+	if usever == "":
+		usever = latest_ver
+	for line in ifile.readlines():
+		if line == github_repo + " " + usever + "\n":
+			print("GCI: Same version already installed.")
+			ifile.close()
+			return
+	old_cwd = os.getcwd()
+	make_dir = "/tmp/gci-" + github_repo.replace("/", "___SLASH___")
+	if os.path.abspath(make_dir) == "/" or os.path.abspath(make_dir) == "/*" or not os.path.abspath(make_dir).startswith("/tmp/gci-"):
+		print("GCI: ERROR: Github repository " + github_repo + " does not exist.")
+		return
+	os.mkdir(make_dir)
+	os.chdir(make_dir)
+	status = os.system("git clone " + repo_url)
+	if status != 0:
+		os.chdir(old_cwd)
+		os.system("rm -rf " + make_dir)
+		print("GCI: ERROR: Github repository " + github_repo + " does not exist.")
+		return
+	repo_dir = make_dir + github_repo[github_repo.find("/"):]
+	os.chdir(repo_dir)
+	if usever != "":
+		status = os.system("git checkout " + usever)
+		if status != 0:
+			os.chdir(old_cwd)
+			os.system("rm -rf " + make_dir)
+			print("GCI: ERROR: Version (tag) " + usever + " does not exist in github repo.")
+			return
+	status = os.system("./configure")
+	if status != 0:
+		status = os.system("make menuconfig")
+		if status != 0:
+			os.system("make config")
+	status = os.system("make -j " + str(os.cpu_count()))
+	if status != 0:
+		os.chdir(old_cwd)
+		os.system("rm -rf " + make_dir)
+		print("GCI: ERROR: Build failed with exit status " + str(status) + ", see above.")
+		return
+	os.system("make modules_install")
+	status = os.system("make install")
+	if status != 0:
+		os.chdir(old_cwd)
+		os.system("rm -rf " + make_dir)
+		print("GCI: ERROR: Cannot excecute 'make install', see above.")
+		print("GCI: ERROR: It does not seem that this github repository supports make & make install, gci can only install from such repos.")
+		return
+	os.chdir(old_cwd)
+	os.system("rm -rf " + make_dir)
+	ifile.close()
+	ifile = open("/etc/gci.lst", "r+")
+	lines = ifile.readlines()
+	for repo in lines:
+		if repo.startswith(github_repo + " "):
+			lines.remove(repo)
+	lines.append(github_repo + " " + usever + "\n")
+	ifile.close()
+	ifile = open("/etc/gci.lst", "w+")
+	ifile.writelines(lines)
+	print("GCI: Configure, build, and install success.")
+
+def uninstall(repo_url, github_repo_basic, github_repo, usever):
+	global ifile
+	old_cwd = os.getcwd()
+	make_dir = "/tmp/gci-" + github_repo.replace("/", "___SLASH___")
+	if os.path.abspath(make_dir) == "/" or os.path.abspath(make_dir) == "/*" or not os.path.abspath(make_dir).startswith("/tmp/gci-"):
+		print("GCI: ERROR: Github repository " + github_repo + " does not exist.")
+		return
+	os.mkdir(make_dir)
+	os.chdir(make_dir)
+	status = os.system("git clone " + repo_url)
+	if status != 0:
+		os.chdir(old_cwd)
+		os.system("rm -rf " + make_dir)
+		print("GCI: ERROR: Github repository " + github_repo + " does not exist.")
+		return
+	repo_dir = make_dir + github_repo[github_repo.find("/"):]
+	os.chdir(repo_dir)
+	if usever != "":
+		status = os.system("git checkout " + usever)
+		if status != 0:
+			os.chdir(old_cwd)
+			os.system("rm -rf " + make_dir)
+			print("GCI: ERROR: Version (tag) " + usever + " does not exist in github repo.")
+			return
+	status = os.system("make uninstall")
+	if status != 0:
+		os.chdir(old_cwd)
+		os.system("rm -rf " + make_dir)
+		print("GCI: ERROR: Make uninstall failed, see above.")
+		return
+	os.chdir(old_cwd)
+	os.system("rm -rf " + make_dir)
+	ifile.close()
+	ifile = open("/etc/gci.lst", "r+")
+	lines = ifile.readlines()
+	for repo in lines:
+		if repo.startswith(github_repo + " "):
+			lines.remove(repo)
+	ifile.close()
+	ifile = open("/etc/gci.lst", "w+")
+	ifile.writelines(lines)
+	print("GCI: Uninstall success.")
+
+if sys.argv[1] == "install":
+	install(repo_url_, github_repo_basic_, github_repo_, usever_)
+elif sys.argv[1] == "upgrade":
+	for line in ifile.readlines():
+		print("-- UPDATE " + line[:line.find(" ")] + " --")
+		repo_url_ = github_repo_basic_ + line[:line.find(" ")]
+		usever_ = subprocess.check_output("git -c 'versionsort.suffix=-' ls-remote --exit-code --refs --sort='version:refname' --tags " + repo_url_ + " '*.*.*' | tail --lines=1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
+		install(github_repo_basic_ + line[:line.find(" ")], github_repo_basic_, line[:line.find(" ")], usever_)
+elif sys.argv[1] == "remove":
+	uninstall(repo_url_, github_repo_basic_, github_repo_, usever_)
+else:
+	print("GCI: ERROR: Invalid command argument.")
+	exit(-1)
+
+ifile.close()
