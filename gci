@@ -25,7 +25,7 @@ if len(sys.argv) == 4:
 
 def install(repo_url, github_repo_basic, github_repo, usever):
 	global ifile
-	latest_ver = subprocess.check_output("git -c 'versionsort.suffix=-' ls-remote --exit-code --refs --sort='version:refname' --tags " + repo_url + " '*.*.*' | tail --lines=1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
+	latest_ver = subprocess.check_output("git ls-remote --tags " + repo_url + " | grep -v 'rc' | grep -v '\^{}' | tail --lines 1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
 	if usever == latest_ver:
 		print("GCI: Same version already installed.")
 		ifile.close()
@@ -141,7 +141,7 @@ elif sys.argv[1] == "upgrade":
 	for line in ifile.readlines():
 		print("-- UPDATE " + line[:line.find(" ")] + " --")
 		repo_url_ = github_repo_basic_ + line[:line.find(" ")]
-		usever_ = subprocess.check_output("git -c 'versionsort.suffix=-' ls-remote --exit-code --refs --sort='version:refname' --tags " + repo_url_ + " '*.*.*' | tail --lines=1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
+		usever_ = subprocess.check_output("git ls-remote --tags " + repo_url + " | grep -v 'rc' | grep -v '\^{}' | tail --lines 1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
 		install(github_repo_basic_ + line[:line.find(" ")], github_repo_basic_, line[:line.find(" ")], usever_)
 elif sys.argv[1] == "remove":
 	uninstall(repo_url_, github_repo_basic_, github_repo_, usever_)
