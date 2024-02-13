@@ -140,9 +140,8 @@ if sys.argv[1] == "install":
 elif sys.argv[1] == "upgrade":
 	for line in ifile.readlines():
 		print("-- UPDATE " + line[:line.find(" ")] + " --")
-		repo_url_ = github_repo_basic_ + line[:line.find(" ")]
-		usever_ = subprocess.check_output("git ls-remote --tags " + repo_url + " | grep -v 'rc' | grep -v '\^{}' | tail --lines 1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
-		install(github_repo_basic_ + line[:line.find(" ")], github_repo_basic_, line[:line.find(" ")], usever_)
+		repo_name_ = line[:line.find(" ")]
+		os.system("gci install " + repo_name_)
 elif sys.argv[1] == "remove":
 	uninstall(repo_url_, github_repo_basic_, github_repo_, usever_)
 else:
