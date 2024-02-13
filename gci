@@ -11,6 +11,7 @@ if whoami_result != b'root\n':
 	exit(-1)
 
 ifile = open("/etc/gci.lst", "r+")
+cfile = open("/etc/gci.cfg", "r+")
 
 parser = argparse.ArgumentParser(prog="GCI", description="Clones a git repository, configures, builds, and installs it.", epilog="Type -h for a list of commands and arguments.")
 
@@ -18,11 +19,14 @@ parser.add_argument("-i", "--install")
 parser.add_argument("-r", "--remove")
 parser.add_argument("-v", "--version")
 parser.add_argument("-u", "--upgrade", action="store_true")
+parser.add_argument("-ri", "--re-install")
+parser.add_argument("-config", "--config-args")
 
 args = parser.parse_args()
 
-def install(repo_url, github_repo_basic, github_repo, usever):
+def install(repo_url, github_repo_basic, github_repo, usever, config):
 	global ifile
+	global cfile
 	latest_ver = subprocess.check_output("git ls-remote --tags " + repo_url + " | grep -v 'rc' | grep -v '\^{}' | grep -v 'pre' | tail --lines 1 | cut --delimiter='/' --fields=3", shell=True).decode("utf-8")[:-1]
 	if latest_ver == "":
 		print("GCI: error: repository " + github_repo + " does not have any released versions/tags that are labeled for release.")
@@ -59,7 +63,7 @@ def install(repo_url, github_repo_basic, github_repo, usever):
 			os.system("rm -rf " + make_dir)
 			print("GCI: error: version (tag) " + usever + " does not exist in github repo.")
 			return
-	status = os.system("./configure")
+	status = os.system("./configure" + config)
 	if status != 0:
 		status = os.system("make menuconfig")
 		if status != 0:
@@ -89,6 +93,14 @@ def install(repo_url, github_repo_basic, github_repo, usever):
 	ifile.close()
 	ifile = open("/etc/gci.lst", "w+")
 	ifile.writelines(lines)
+	lines = cfile.readlines()
+	for repo in lines:
+		if repo.startswith(github_repo + " "):
+			lines.remove(repo)
+	lines.append(github_repo + " " + config + "\n")
+	cfile.close()
+	cfile = open("/etc/gci.cfg", "w+")
+	cfile.writelines(lines)
 	print("GCI: configure, build, and install success.")
 
 def uninstall(repo_url, github_repo_basic, github_repo, usever):
@@ -134,11 +146,20 @@ def uninstall(repo_url, github_repo_basic, github_repo, usever):
 	ifile.writelines(lines)
 	print("GCI: Uninstall success.")
 
+config = ""
+if args.config_args != None:
+	config = " " + args.config_args
+
 if args.upgrade:
 	for line in ifile.readlines():
 		print("-- UPDATE " + line[:line.find(" ")] + " --")
 		repo_name_ = line[:line.find(" ")]
-		os.system("gci -i " + repo_name_)
+		config = ""
+		for subline in cfile.readlines():
+			if subline.startswith(repo_name_ + " "):
+				config = subline[subline.find(" ") + 1:]
+				break
+		os.system("gci -i " + repo_name_ + " -config=\"" + config + "\"")
 elif args.install != None:
 	github_repo_basic_ = "https://github.com/"
 	github_repo_ = ""
@@ -148,7 +169,7 @@ elif args.install != None:
 		usever_ = args.version
 	github_repo_ = args.install
 	repo_url_ = github_repo_basic_ + github_repo_
-	install(repo_url_, github_repo_basic_, github_repo_, usever_)
+	install(repo_url_, github_repo_basic_, github_repo_, usever_, config)
 elif args.remove != None:
 	github_repo_basic_ = "https://github.com/"
 	github_repo_ = ""
@@ -156,11 +177,15 @@ elif args.remove != None:
 	usever_ = ""
 	if args.version != None:
 		usever_ = args.version
-	github_repo_ = args.install
+	github_repo_ = args.remove
 	repo_url_ = github_repo_basic_ + github_repo_
 	uninstall(repo_url_, github_repo_basic_, github_repo_, usever_)
+elif args.re_install != None:
+	os.system("gci -r " + args.re_install)
+	os.system("gci -i " + args.re_install + " -config=\"" + config + "\"")
 else:
-	print("GCI: error: no command given [-i INSTALL] [-r REMOVE] [-u] [optional:-v VERSION]")
+	print("GCI: error: no command given [-i INSTALL] [-r REMOVE] [-u] [optional:-v VERSION] [-ri RE_INSTALL] [-config CONFIG_ARGS]")
 	exit(-1)
 
 ifile.close()
+cfile.close()
